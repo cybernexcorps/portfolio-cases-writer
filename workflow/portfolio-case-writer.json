@@ -1,0 +1,676 @@
+{
+  "name": "Portfolio Case Writer",
+  "nodes": [
+    {
+      "id": "pcw-0001-webhook-main",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "portfolio-case/generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "ddvb-portfolio-case-web"
+    },
+    {
+      "id": "pcw-0002-validate-api-key",
+      "name": "Validate API Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "jsCode": "// Validate shared API key\nconst EXPECTED_KEY = '{{ $env.DDVB_API_KEY }}';\n\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst apiKey = headers['x-ddvb-api-key'] || headers['X-DDVB-Api-Key'] || headers['X-DDVB-API-Key'] || '';\n\nif (apiKey !== EXPECTED_KEY) {\n  throw new Error('Неверный API ключ. Доступ запрещен.');\n}\n\nreturn [item];"
+      }
+    },
+    {
+      "id": "pcw-0003-normalize-input",
+      "name": "Normalize Web Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "// Normalize incoming web request\nconst item = $input.first();\nconst body = item.json.body || item.json;\n\nconst jobId = body.jobId || 'job-' + Date.now();\nconst brief = body.brief || '';\nconst team = body.team || '';\nconst source = body.source || 'web';\nconst callbackUrl = body.callbackUrl || '';\n\nreturn [{\n  json: {\n    jobId,\n    brief,\n    team,\n    source,\n    callbackUrl,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0004-respond-202",
+      "name": "Respond 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"accepted\", jobId: $json.jobId }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "pcw-0005-parse-request",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300],
+      "parameters": {
+        "jsCode": "// Parse and validate the incoming request\nconst item = $input.first();\nconst data = item.json;\n\nconst brief = (data.brief || '').trim();\nconst team = (data.team || '').trim();\nconst jobId = data.jobId || '';\nconst source = data.source || 'web';\nconst callbackUrl = data.callbackUrl || '';\nconst timestamp = data.timestamp || new Date().toISOString();\n\n// Validate brief is not empty\nif (!brief) {\n  throw new Error('Поле brief обязательно и не может быть пустым.');\n}\n\n// Validate Cyrillic presence in brief\nconst hasCyrillic = /[А-Яа-яЁё]/.test(brief);\nif (!hasCyrillic) {\n  throw new Error('Бриф должен содержать текст на русском языке (кириллица).');\n}\n\n// Extract client name from brief heuristically (first sentence or up to first comma/period)\nconst clientNameMatch = brief.match(/^[\\s\\S]*?(?:клиент[а-я]*|компани[а-я]*|бренд[а-я]*)?[:\\s]+([^,.\\n]{3,60})/i);\nconst clientName = clientNameMatch ? clientNameMatch[1].trim() : brief.substring(0, 80);\n\nreturn [{\n  json: {\n    jobId,\n    brief,\n    team,\n    source,\n    callbackUrl,\n    timestamp,\n    clientName,\n    hasCyrillic: true\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0006-fetch-perplexity-prompt",
+      "name": "Fetch Perplexity Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 100],
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/perplexity-research.md",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "pcw-0007-fetch-case-writer-prompt",
+      "name": "Fetch Case Writer Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300],
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/case-writer.md",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "pcw-0008-fetch-humanizer-prompt",
+      "name": "Fetch Humanizer Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 500],
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/humanizer.md",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "pcw-0009-merge-prompts",
+      "name": "Merge Prompts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1440, 300],
+      "parameters": {
+        "mode": "append"
+      }
+    },
+    {
+      "id": "pcw-0010-assemble-prompts",
+      "name": "Assemble Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, 300],
+      "parameters": {
+        "jsCode": "// Merge the 3 fetched prompt texts with parsed request data\nconst items = $input.all();\n\n// Helper: extract body text from HTTP response\nconst extractText = (item) => {\n  const json = item.json;\n  if (typeof json.body === 'string') return json.body;\n  if (typeof json.data === 'string') return json.data;\n  if (typeof json === 'string') return json;\n  return JSON.stringify(json);\n};\n\n// Items arrive in append order: Perplexity, CaseWriter, Humanizer\nconst perplexityPrompt = extractText(items[0]);\nconst caseWriterPrompt = extractText(items[1]);\nconst humanizerPrompt = extractText(items[2]);\n\n// Pull base request data from Parse Request node\nconst baseData = $('Parse Request').first().json;\n\nreturn [{\n  json: {\n    ...baseData,\n    prompts: {\n      perplexityResearch: perplexityPrompt,\n      caseWriter: caseWriterPrompt,\n      humanizer: humanizerPrompt\n    },\n    promptsLoaded: true,\n    promptLoadTimestamp: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0011-perplexity-research",
+      "name": "Perplexity Research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1920, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "perplexityApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"sonar\",\n  messages: [\n    {\n      role: \"system\",\n      content: $json.prompts.perplexityResearch\n    },\n    {\n      role: \"user\",\n      content: \"Клиент и проект: \" + $json.clientName + \"\\n\\nПолный бриф:\\n\" + $json.brief\n    }\n  ],\n  temperature: 0.3,\n  max_tokens: 1200\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "perplexityApi": {
+          "id": "um7RpJwg4207ROLP",
+          "name": "Perplexity account"
+        }
+      }
+    },
+    {
+      "id": "pcw-0012-claude-case-writer",
+      "name": "Claude Case Writer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2160, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-sonnet-4-20250514\",\n  max_tokens: 4096,\n  system: $('Assemble Prompts').first().json.prompts.caseWriter,\n  messages: [\n    {\n      role: \"user\",\n      content: \"БРИФ:\\n\" + $('Assemble Prompts').first().json.brief + \"\\n\\nКОМАНДА:\\n\" + ($('Assemble Prompts').first().json.team || 'Не указана') + \"\\n\\nРЕЗУЛЬТАТЫ ИССЛЕДОВАНИЯ:\\n\" + ($json.choices && $json.choices[0] ? $json.choices[0].message.content : 'Исследование недоступно')\n    }\n  ]\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-api-credentials",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "id": "pcw-0013-extract-blocks",
+      "name": "Extract Blocks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 300],
+      "parameters": {
+        "jsCode": "// Extract Claude output and split by ## markers into 5 blocks\nconst claudeResponse = $input.first().json;\nconst assembledData = $('Assemble Prompts').first().json;\n\n// Get text from Claude response\nlet caseText = '';\ntry {\n  caseText = claudeResponse.content[0].text;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа Claude: ' + e.message);\n}\n\n// Split by ## markers\nconst blockMap = {};\nconst rawBlocks = caseText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  // Extract block header and content\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  // Map Russian block headers to keys\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...assembledData,\n    caseText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0014-gpt4o-humanizer",
+      "name": "GPT-4o Humanizer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"gpt-4o\",\n  messages: [\n    {\n      role: \"system\",\n      content: $json.prompts.humanizer\n    },\n    {\n      role: \"user\",\n      content: $json.caseText\n    }\n  ],\n  temperature: 0.7,\n  max_tokens: 4096\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "vMHSP02jcq5bmgAi",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "id": "pcw-0015-re-extract-blocks",
+      "name": "Re-extract Blocks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2880, 300],
+      "parameters": {
+        "jsCode": "// Extract humanized text and re-split by ## markers\nconst gptResponse = $input.first().json;\nconst prevData = $('Extract Blocks').first().json;\n\n// Get humanized text\nlet humanizedText = '';\ntry {\n  humanizedText = gptResponse.choices[0].message.content;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа GPT-4o: ' + e.message);\n}\n\n// Split by ## markers into 5 blocks\nconst blockMap = {};\nconst rawBlocks = humanizedText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    humanizedText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0016-validation",
+      "name": "Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3120, 300],
+      "parameters": {
+        "jsCode": "// Validate the humanized portfolio case\nconst data = $input.first().json;\nconst blocks = data.blocks || {};\nconst humanizedText = data.humanizedText || '';\n\nconst warnings = [];\n\n// Check all 5 blocks are present\nconst requiredBlocks = ['title', 'situation', 'task', 'solution', 'team'];\nconst presentBlocks = requiredBlocks.filter(b => blocks[b] && blocks[b].trim().length > 0);\nconst allBlocksPresent = presentBlocks.length === 5;\nif (!allBlocksPresent) {\n  const missingBlocks = requiredBlocks.filter(b => !blocks[b] || !blocks[b].trim().length);\n  warnings.push('Отсутствуют блоки: ' + missingBlocks.join(', '));\n}\n\n// Calculate char count of content blocks ONLY (excluding team block)\nconst contentText = [\n  blocks.title || '',\n  blocks.situation || '',\n  blocks.task || '',\n  blocks.solution || ''\n].join('\\n\\n');\nconst charCount = contentText.length;\n\n// Check char count 1500-2000 (content blocks only, excluding team)\nconst charCountOk = charCount >= 1500 && charCount <= 2000;\nif (!charCountOk) {\n  warnings.push(`Объём контента: ${charCount} символов. Требуется 1500–2000 символов (без учёта блока Команда).`);\n}\n\n// Check Cyrillic text\nconst hasCyrillic = /[А-Яа-яЁё]/.test(humanizedText);\nif (!hasCyrillic) {\n  warnings.push('Текст не содержит кириллицы.');\n}\n\n// Check Russian quotes «»\nconst hasRussianQuotes = /«[^»]+»/.test(humanizedText);\nif (!hasRussianQuotes) {\n  warnings.push('Отсутствуют русские кавычки «». Замените прямые кавычки на угловые.');\n}\n\nconst compliancePassed = allBlocksPresent && charCountOk && hasCyrillic;\n\n// Build full content string for output (including all blocks with ## markers)\nconst content = requiredBlocks\n  .filter(b => blocks[b])\n  .map(b => {\n    const headerNames = {\n      title: 'Заголовок',\n      situation: 'Ситуация',\n      task: 'Задача',\n      solution: 'Решение',\n      team: 'Команда'\n    };\n    return `## ${headerNames[b]}\\n${blocks[b]}`;\n  })\n  .join('\\n\\n');\n\nreturn [{\n  json: {\n    ...data,\n    content,\n    charCount,\n    blocks,\n    compliancePassed,\n    warnings\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0017-switch-source",
+      "name": "Route by Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [3360, 300],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "check-web-source",
+                    "leftValue": "={{ $('Parse Request').first().json.source }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "web"
+                  }
+                ]
+              },
+              "outputIndex": 0,
+              "renameOutput": true,
+              "outputLabel": "Web"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      }
+    },
+    {
+      "id": "pcw-0018-build-callback",
+      "name": "Build Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3600, 180],
+      "parameters": {
+        "jsCode": "// Build callback payload for the web app\nconst data = $input.first().json;\nconst parseData = $('Parse Request').first().json;\n\nconst startTime = new Date(parseData.timestamp).getTime();\nconst executionTime = Date.now() - startTime;\n\nconst payload = {\n  jobId: parseData.jobId,\n  status: 'completed',\n  workflowType: 'portfolio_case',\n  result: {\n    content: data.content || '',\n    charCount: data.charCount || 0,\n    blocks: data.blocks || {},\n    compliancePassed: data.compliancePassed || false,\n    warnings: data.warnings || []\n  },\n  executionTime,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    payload,\n    callbackUrl: parseData.callbackUrl\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0019-send-callback",
+      "name": "Send Web Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3840, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DDVB-API-Key",
+              "value": "{{ $env.DDVB_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "pcw-0020-build-error-callback",
+      "name": "Build Error Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3600, 460],
+      "parameters": {
+        "jsCode": "// Build error callback payload\nlet parseData = {};\ntry {\n  parseData = $('Parse Request').first().json;\n} catch (e) {\n  parseData = { jobId: 'unknown', callbackUrl: '', timestamp: new Date().toISOString() };\n}\n\nconst data = $input.first().json;\nconst errorMessage = data.error?.message || data.message || 'Неизвестная ошибка при генерации кейса.';\n\nconst startTime = new Date(parseData.timestamp || Date.now()).getTime();\nconst executionTime = Date.now() - startTime;\n\nconst payload = {\n  jobId: parseData.jobId || 'unknown',\n  status: 'failed',\n  workflowType: 'portfolio_case',\n  error: errorMessage,\n  executionTime,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    payload,\n    callbackUrl: parseData.callbackUrl || ''\n  }\n}];"
+      }
+    },
+    {
+      "id": "pcw-0021-send-error-callback",
+      "name": "Send Error Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3840, 460],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-DDVB-API-Key",
+              "value": "{{ $env.DDVB_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "pcw-sticky-overview",
+      "name": "Sticky Note: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "content": "## Portfolio Case Writer v1.0\n\n**Trigger:** POST /portfolio-case/generate\n\n**Input:**\n```json\n{\n  \"jobId\": \"uuid\",\n  \"brief\": \"Бриф на русском языке...\",\n  \"team\": \"Команда проекта...\",\n  \"source\": \"web\",\n  \"callbackUrl\": \"https://...\"\n}\n```\n\n**Pipeline:**\nWebhook -> Validate API Key -> Normalize -> Respond 202 -> Parse\n-> [3x parallel prompt fetch] -> Merge -> Assemble\n-> Perplexity Research -> Claude Writer -> Extract Blocks\n-> GPT-4o Humanizer -> Re-extract Blocks -> Validation\n-> Route by Source -> Build Callback -> POST callback\n\n**Output blocks:** Заголовок, Ситуация, Задача, Решение, Команда\n**Target length:** 1500–2000 chars (content blocks, excluding Команда)",
+        "height": 280,
+        "width": 480,
+        "color": 4
+      }
+    },
+    {
+      "id": "pcw-sticky-prompts",
+      "name": "Sticky Note: Prompts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1200, -100],
+      "parameters": {
+        "content": "## Parallel Prompt Fetch\n\n3 GitHub raw URL fetches run in parallel,\nthen merged (append mode) into Assemble Prompts.\n\nOrder in merged output:\n1. perplexity-research.md (items[0])\n2. case-writer.md (items[1])\n3. humanizer.md (items[2])\n\nFallback: if GitHub is unreachable, node\nthrows and workflow follows error path.",
+        "height": 180,
+        "width": 340,
+        "color": 5
+      }
+    },
+    {
+      "id": "pcw-sticky-validation",
+      "name": "Sticky Note: Validation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3120, 520],
+      "parameters": {
+        "content": "## Validation Rules\n\n- 5 blocks present: Заголовок, Ситуация, Задача, Решение, Команда\n- Content chars (excl. Команда): 1500–2000\n- Cyrillic text present\n- Russian quotes «» used\n\ncompliancePassed = blocks OK + char count OK + Cyrillic OK\nwarnings[] lists non-fatal issues (e.g. missing «»)",
+        "height": 180,
+        "width": 340,
+        "color": 3
+      }
+    },
+    {
+      "id": "pcw-sticky-error",
+      "name": "Sticky Note: Error Path",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [3600, 640],
+      "parameters": {
+        "content": "## Error Path\n\nRoute by Source output[1] (fallback) leads here.\nAlso: connect any node's error output to\nBuild Error Callback manually if needed.\n\nError payload: { jobId, status:'failed', error, timestamp }",
+        "height": 140,
+        "width": 300,
+        "color": 2
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate API Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate API Key": {
+      "main": [
+        [
+          {
+            "node": "Normalize Web Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Web Input": {
+      "main": [
+        [
+          {
+            "node": "Respond 202",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Fetch Perplexity Prompt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Case Writer Prompt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Humanizer Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Perplexity Prompt": {
+      "main": [
+        [
+          {
+            "node": "Merge Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Case Writer Prompt": {
+      "main": [
+        [
+          {
+            "node": "Merge Prompts",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Humanizer Prompt": {
+      "main": [
+        [
+          {
+            "node": "Merge Prompts",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Prompts": {
+      "main": [
+        [
+          {
+            "node": "Assemble Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Prompts": {
+      "main": [
+        [
+          {
+            "node": "Perplexity Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Research": {
+      "main": [
+        [
+          {
+            "node": "Claude Case Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Case Writer": {
+      "main": [
+        [
+          {
+            "node": "Extract Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Blocks": {
+      "main": [
+        [
+          {
+            "node": "GPT-4o Humanizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4o Humanizer": {
+      "main": [
+        [
+          {
+            "node": "Re-extract Blocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-extract Blocks": {
+      "main": [
+        [
+          {
+            "node": "Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation": {
+      "main": [
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Source": {
+      "main": [
+        [
+          {
+            "node": "Build Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Callback": {
+      "main": [
+        [
+          {
+            "node": "Send Web Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Callback": {
+      "main": [
+        [
+          {
+            "node": "Send Error Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "pinData": {},
+  "versionId": "pcw-v1-0-initial",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "c43650aac784c0350f3118d77384bbe7d5304d048a958ee218cafcaff1cce473"
+  },
+  "tags": [
+    {
+      "name": "portfolio"
+    },
+    {
+      "name": "web"
+    }
+  ]
+}
