@@ -62,39 +62,96 @@
     {
       "id": "pcw-0006-fetch-perplexity-prompt",
       "name": "Fetch Perplexity Prompt",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
       "position": [1200, 100],
       "parameters": {
-        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/perplexity-research.md",
-        "options": {
-          "timeout": 10000
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "cybernexcorps"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "portfolio-cases-writer"
+        },
+        "filePath": "prompts/perplexity-research.md",
+        "asBinaryProperty": false,
+        "additionalParameters": {
+          "reference": "main"
+        }
+      },
+      "credentials": {
+        "githubApi": {
+          "id": "pGlylAmPTa6t4Io0",
+          "name": "GitHub account"
         }
       }
     },
     {
       "id": "pcw-0007-fetch-case-writer-prompt",
       "name": "Fetch Case Writer Prompt",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
       "position": [1200, 300],
       "parameters": {
-        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/case-writer.md",
-        "options": {
-          "timeout": 10000
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "cybernexcorps"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "portfolio-cases-writer"
+        },
+        "filePath": "prompts/case-writer.md",
+        "asBinaryProperty": false,
+        "additionalParameters": {
+          "reference": "main"
+        }
+      },
+      "credentials": {
+        "githubApi": {
+          "id": "pGlylAmPTa6t4Io0",
+          "name": "GitHub account"
         }
       }
     },
     {
       "id": "pcw-0008-fetch-humanizer-prompt",
       "name": "Fetch Humanizer Prompt",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
       "position": [1200, 500],
       "parameters": {
-        "url": "https://raw.githubusercontent.com/cybernexcorps/portfolio-cases-writer/main/prompts/humanizer.md",
-        "options": {
-          "timeout": 10000
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "mode": "name",
+          "value": "cybernexcorps"
+        },
+        "repository": {
+          "__rl": true,
+          "mode": "name",
+          "value": "portfolio-cases-writer"
+        },
+        "filePath": "prompts/humanizer.md",
+        "asBinaryProperty": false,
+        "additionalParameters": {
+          "reference": "main"
+        }
+      },
+      "credentials": {
+        "githubApi": {
+          "id": "pGlylAmPTa6t4Io0",
+          "name": "GitHub account"
         }
       }
     },
@@ -115,7 +172,7 @@
       "typeVersion": 2,
       "position": [1680, 300],
       "parameters": {
-        "jsCode": "// Merge the 3 fetched prompt texts with parsed request data\nconst items = $input.all();\n\n// Helper: extract body text from HTTP response\nconst extractText = (item) => {\n  const json = item.json;\n  if (typeof json.body === 'string') return json.body;\n  if (typeof json.data === 'string') return json.data;\n  if (typeof json === 'string') return json;\n  return JSON.stringify(json);\n};\n\n// Items arrive in append order: Perplexity, CaseWriter, Humanizer\nconst perplexityPrompt = extractText(items[0]);\nconst caseWriterPrompt = extractText(items[1]);\nconst humanizerPrompt = extractText(items[2]);\n\n// Pull base request data from Parse Request node\nconst baseData = $('Parse Request').first().json;\n\nreturn [{\n  json: {\n    ...baseData,\n    prompts: {\n      perplexityResearch: perplexityPrompt,\n      caseWriter: caseWriterPrompt,\n      humanizer: humanizerPrompt\n    },\n    promptsLoaded: true,\n    promptLoadTimestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Merge the 3 fetched prompt texts with parsed request data\nconst items = $input.all();\n\n// Helper: extract text from GitHub native node (base64) or HTTP fallback\nconst extractText = (item) => {\n  const json = item.json;\n  // GitHub native node returns base64-encoded content\n  if (json.content && json.encoding === 'base64') {\n    return Buffer.from(json.content.replace(/\\n/g, ''), 'base64').toString('utf8');\n  }\n  // Fallback for raw HTTP responses\n  if (typeof json.body === 'string') return json.body;\n  if (typeof json.data === 'string') return json.data;\n  if (typeof json === 'string') return json;\n  return JSON.stringify(json);\n};\n\n// Items arrive in append order: Perplexity, CaseWriter, Humanizer\nconst perplexityPrompt = extractText(items[0]);\nconst caseWriterPrompt = extractText(items[1]);\nconst humanizerPrompt = extractText(items[2]);\n\n// Pull base request data from Parse Request node\nconst baseData = $('Parse Request').first().json;\n\nreturn [{\n  json: {\n    ...baseData,\n    prompts: {\n      perplexityResearch: perplexityPrompt,\n      caseWriter: caseWriterPrompt,\n      humanizer: humanizerPrompt\n    },\n    promptsLoaded: true,\n    promptLoadTimestamp: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -155,32 +212,32 @@
     {
       "id": "pcw-0012-claude-case-writer",
       "name": "Claude Case Writer",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
       "position": [2160, 300],
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "anthropicApi",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "promptType": "define",
+        "text": "={{ 'БРИФ:\\n' + $('Assemble Prompts').first().json.brief + '\\n\\nКОМАНДА:\\n' + ($('Assemble Prompts').first().json.team || 'Не указана') + '\\n\\nРЕЗУЛЬТАТЫ ИССЛЕДОВАНИЯ:\\n' + ($json.choices && $json.choices[0] ? $json.choices[0].message.content : 'Исследование недоступно') }}",
+        "messages": {
+          "messageValues": [
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "anthropic-version",
-              "value": "2023-06-01"
+              "type": "SystemMessagePromptTemplate",
+              "message": "={{ $('Assemble Prompts').first().json.prompts.caseWriter }}"
             }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-sonnet-4-20250514\",\n  max_tokens: 4096,\n  system: $('Assemble Prompts').first().json.prompts.caseWriter,\n  messages: [\n    {\n      role: \"user\",\n      content: \"БРИФ:\\n\" + $('Assemble Prompts').first().json.brief + \"\\n\\nКОМАНДА:\\n\" + ($('Assemble Prompts').first().json.team || 'Не указана') + \"\\n\\nРЕЗУЛЬТАТЫ ИССЛЕДОВАНИЯ:\\n\" + ($json.choices && $json.choices[0] ? $json.choices[0].message.content : 'Исследование недоступно')\n    }\n  ]\n}) }}",
+        }
+      }
+    },
+    {
+      "id": "pcw-0012b-anthropic-model",
+      "name": "Anthropic Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [2160, 480],
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
         "options": {
-          "timeout": 60000
+          "maxTokens": 4096
         }
       },
       "credentials": {
@@ -197,34 +254,39 @@
       "typeVersion": 2,
       "position": [2400, 300],
       "parameters": {
-        "jsCode": "// Extract Claude output and split by ## markers into 5 blocks\nconst claudeResponse = $input.first().json;\nconst assembledData = $('Assemble Prompts').first().json;\n\n// Get text from Claude response\nlet caseText = '';\ntry {\n  caseText = claudeResponse.content[0].text;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа Claude: ' + e.message);\n}\n\n// Split by ## markers\nconst blockMap = {};\nconst rawBlocks = caseText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  // Extract block header and content\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  // Map Russian block headers to keys\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...assembledData,\n    caseText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
+        "jsCode": "// Extract Claude output and split by ## markers into 5 blocks\nconst assembledData = $('Assemble Prompts').first().json;\n\n// Get text from chainLlm response\nlet caseText = '';\ntry {\n  caseText = $input.first().json.text;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа Claude: ' + e.message);\n}\n\n// Split by ## markers\nconst blockMap = {};\nconst rawBlocks = caseText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  // Extract block header and content\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  // Map Russian block headers to keys\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...assembledData,\n    caseText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
       }
     },
     {
       "id": "pcw-0014-gpt4o-humanizer",
       "name": "GPT-4o Humanizer",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
       "position": [2640, 300],
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "promptType": "define",
+        "text": "={{ $json.caseText }}",
+        "messages": {
+          "messageValues": [
             {
-              "name": "Content-Type",
-              "value": "application/json"
+              "type": "SystemMessagePromptTemplate",
+              "message": "={{ $json.prompts.humanizer }}"
             }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  model: \"gpt-4o\",\n  messages: [\n    {\n      role: \"system\",\n      content: $json.prompts.humanizer\n    },\n    {\n      role: \"user\",\n      content: $json.caseText\n    }\n  ],\n  temperature: 0.7,\n  max_tokens: 4096\n}) }}",
+        }
+      }
+    },
+    {
+      "id": "pcw-0014b-openai-model",
+      "name": "OpenAI Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [2640, 480],
+      "parameters": {
+        "model": "gpt-4o",
         "options": {
-          "timeout": 60000
+          "maxTokens": 4096,
+          "temperature": 0.7
         }
       },
       "credentials": {
@@ -241,7 +303,7 @@
       "typeVersion": 2,
       "position": [2880, 300],
       "parameters": {
-        "jsCode": "// Extract humanized text and re-split by ## markers\nconst gptResponse = $input.first().json;\nconst prevData = $('Extract Blocks').first().json;\n\n// Get humanized text\nlet humanizedText = '';\ntry {\n  humanizedText = gptResponse.choices[0].message.content;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа GPT-4o: ' + e.message);\n}\n\n// Split by ## markers into 5 blocks\nconst blockMap = {};\nconst rawBlocks = humanizedText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    humanizedText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
+        "jsCode": "// Extract humanized text and re-split by ## markers\nconst prevData = $('Extract Blocks').first().json;\n\n// Get humanized text from chainLlm response\nlet humanizedText = '';\ntry {\n  humanizedText = $input.first().json.text;\n} catch (e) {\n  throw new Error('Не удалось извлечь текст из ответа GPT-4o: ' + e.message);\n}\n\n// Split by ## markers into 5 blocks\nconst blockMap = {};\nconst rawBlocks = humanizedText.split(/(?=## )/);\n\nfor (const block of rawBlocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue;\n\n  const headerMatch = trimmed.match(/^## (.+?)\\n([\\s\\S]*)$/);\n  if (!headerMatch) continue;\n\n  const header = headerMatch[1].trim().toLowerCase();\n  const content = headerMatch[2].trim();\n\n  if (/заголов|title/i.test(header)) {\n    blockMap.title = content;\n  } else if (/ситуаци|situation/i.test(header)) {\n    blockMap.situation = content;\n  } else if (/задач|task/i.test(header)) {\n    blockMap.task = content;\n  } else if (/решени|solution/i.test(header)) {\n    blockMap.solution = content;\n  } else if (/команд|team/i.test(header)) {\n    blockMap.team = content;\n  }\n}\n\nreturn [{\n  json: {\n    ...prevData,\n    humanizedText,\n    blocks: blockMap,\n    blocksExtracted: Object.keys(blockMap).length\n  }\n}];"
       }
     },
     {
@@ -378,7 +440,7 @@
       "typeVersion": 1,
       "position": [0, 0],
       "parameters": {
-        "content": "## Portfolio Case Writer v1.0\n\n**Trigger:** POST /portfolio-case/generate\n\n**Input:**\n```json\n{\n  \"jobId\": \"uuid\",\n  \"brief\": \"Бриф на русском языке...\",\n  \"team\": \"Команда проекта...\",\n  \"source\": \"web\",\n  \"callbackUrl\": \"https://...\"\n}\n```\n\n**Pipeline:**\nWebhook -> Validate API Key -> Normalize -> Respond 202 -> Parse\n-> [3x parallel prompt fetch] -> Merge -> Assemble\n-> Perplexity Research -> Claude Writer -> Extract Blocks\n-> GPT-4o Humanizer -> Re-extract Blocks -> Validation\n-> Route by Source -> Build Callback -> POST callback\n\n**Output blocks:** Заголовок, Ситуация, Задача, Решение, Команда\n**Target length:** 1500–2000 chars (content blocks, excluding Команда)",
+        "content": "## Portfolio Case Writer v1.1\n\n**Trigger:** POST /portfolio-case/generate\n\n**Input:**\n```json\n{\n  \"jobId\": \"uuid\",\n  \"brief\": \"Бриф на русском языке...\",\n  \"team\": \"Команда проекта...\",\n  \"source\": \"web\",\n  \"callbackUrl\": \"https://...\"\n}\n```\n\n**Pipeline:**\nWebhook -> Validate API Key -> Normalize -> Respond 202 -> Parse\n-> [3x parallel prompt fetch via GitHub] -> Merge -> Assemble\n-> Perplexity Research (HTTP) -> Claude Writer (chainLlm) -> Extract Blocks\n-> GPT-4o Humanizer (chainLlm) -> Re-extract Blocks -> Validation\n-> Route by Source -> Build Callback -> POST callback\n\n**Output blocks:** Заголовок, Ситуация, Задача, Решение, Команда\n**Target length:** 1500–2000 chars (content blocks, excluding Команда)",
         "height": 280,
         "width": 480,
         "color": 4
@@ -391,7 +453,7 @@
       "typeVersion": 1,
       "position": [1200, -100],
       "parameters": {
-        "content": "## Parallel Prompt Fetch\n\n3 GitHub raw URL fetches run in parallel,\nthen merged (append mode) into Assemble Prompts.\n\nOrder in merged output:\n1. perplexity-research.md (items[0])\n2. case-writer.md (items[1])\n3. humanizer.md (items[2])\n\nFallback: if GitHub is unreachable, node\nthrows and workflow follows error path.",
+        "content": "## Parallel Prompt Fetch (GitHub native)\n\n3 GitHub node fetches run in parallel,\nthen merged (append mode) into Assemble Prompts.\n\nOrder in merged output:\n1. perplexity-research.md (items[0])\n2. case-writer.md (items[1])\n3. humanizer.md (items[2])\n\nGitHub node returns base64 content.\nAssemble Prompts decodes via Buffer.from(..., 'base64').",
         "height": 180,
         "width": 340,
         "color": 5
@@ -556,6 +618,17 @@
         ]
       ]
     },
+    "Anthropic Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Claude Case Writer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Claude Case Writer": {
       "main": [
         [
@@ -573,6 +646,17 @@
           {
             "node": "GPT-4o Humanizer",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "GPT-4o Humanizer",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
@@ -660,7 +744,7 @@
     "errorWorkflow": ""
   },
   "pinData": {},
-  "versionId": "pcw-v1-0-initial",
+  "versionId": "pcw-v1-1-native-nodes",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "c43650aac784c0350f3118d77384bbe7d5304d048a958ee218cafcaff1cce473"
